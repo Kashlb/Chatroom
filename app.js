@@ -83,33 +83,30 @@ async function deleteRoom(roomId) {
   ]);
 }
 
-// CHECK FOR EMPTY ROOMS
+// CLEAN UP EMPTY ROOMS
 async function cleanupEmptyRooms() {
   try {
-    const roomsSnapshot = await get(ref(db, "roomInfo"));
+    const snapshot = await get(ref(db, "roomInfo"));
 
-    if (!roomsSnapshot.exists()) return;
+    if (!snapshot.exists()) return;
 
-    const rooms = roomsSnapshot.val();
+    const rooms = snapshot.val();
 
     for (const [id, room] of Object.entries(rooms)) {
-      // Give newly created rooms time to finish setup
       if (Date.now() - (room.createdAt || 0) < 15000) continue;
 
-      const membersSnapshot = await get(
-        ref(db, `roomMembers/${id}`)
-      );
+      const members = await get(ref(db, `roomMembers/${id}`));
 
-      if (!membersSnapshot.exists()) {
+      if (!members.exists()) {
         await deleteRoom(id);
       }
     }
   } catch (error) {
-    console.error("Room cleanup error:", error);
+    console.error("Cleanup error:", error);
   }
 }
 
-// FIND A ROOM BY ITS NAME
+// FIND ROOM
 async function findRoomByName(name) {
   await cleanupEmptyRooms();
 
@@ -117,8 +114,8 @@ async function findRoomByName(name) {
 
   if (!snapshot.exists()) return null;
 
-  const wantedName = normalizeName(name);
   const rooms = snapshot.val();
+  const wantedName = normalizeName(name);
 
   for (const [id, room] of Object.entries(rooms)) {
     if (normalizeName(room.name || "") === wantedName) {
@@ -129,7 +126,7 @@ async function findRoomByName(name) {
   return null;
 }
 
-// CONNECT TO FIREBASE
+// CONNECT
 try {
   const result = await signInAnonymously(auth);
   currentUser = result.user;
@@ -141,7 +138,7 @@ try {
   cleanupEmptyRooms();
 
 } catch (error) {
-  status("Could not connect to Firebase: " + error.message);
+  status("Could not connect: " + error.message);
 }
 
 // NAVIGATION
@@ -154,14 +151,14 @@ document.querySelectorAll(".backButton").forEach(button => {
   button.onclick = () => showScreen("homeScreen");
 });
 
-// DISPLAY AVAILABLE ROOMS
+// AVAILABLE ROOMS
 function displayAvailableRooms(rooms) {
   const box = $("availableRooms");
   box.innerHTML = "";
 
   const entries = Object.entries(rooms);
 
-  if (entries.length === 0) {
+  if (!entries.length) {
     box.textContent = "There are no rooms available right now.";
     return;
   }
@@ -173,14 +170,15 @@ function displayAvailableRooms(rooms) {
     const name = document.createElement("strong");
     name.textContent = safeText(room.name);
 
-    const joinButton = document.createElement("button");
-    joinButton.textContent = "Join";
-    joinButton.onclick = () => {
+    const button = document.createElement("button");
+    button.textContent = "Join";
+
+    button.onclick = () => {
       $("joinRoomName").value = room.name;
       showScreen("joinScreen");
     };
 
-    item.append(name, joinButton);
+    item.append(name, button);
     box.appendChild(item);
   });
 }
@@ -190,7 +188,7 @@ $("createForm").addEventListener("submit", async event => {
   event.preventDefault();
 
   if (!currentUser) {
-    status("Still connecting. Please try again.");
+    status("Still connecting.");
     return;
   }
 
@@ -200,20 +198,18 @@ $("createForm").addEventListener("submit", async event => {
   const cohostPin = $("createCohostPin").value;
 
   if (!name || !roomName || hostPin.length < 4) {
-    status("Please complete the fields. The host PIN must be at least 4 characters.");
+    status("Complete all required fields. Host PIN needs at least 4 characters.");
     return;
   }
 
   if (cohostPin && cohostPin.length < 4) {
-    status("The co-host PIN must be at least 4 characters.");
+    status("Co-host PIN needs at least 4 characters.");
     return;
   }
 
   try {
-    const existingRoom = await findRoomByName(roomName);
-
-    if (existingRoom) {
-      status("That room name is already being used. Choose another name.");
+    if (await findRoomByName(roomName)) {
+      status("That room name is already being used.");
       return;
     }
 
@@ -224,7 +220,7 @@ $("createForm").addEventListener("submit", async event => {
       name: roomName,
       hostName: name,
       hostUid: currentUser.uid,
-      hostPin: hostPin,
+      hostPin,
       cohostPin: cohostPin || "",
       cohostUid: "",
       settings: {
@@ -241,19 +237,19 @@ $("createForm").addEventListener("submit", async event => {
     });
 
     $("createForm").reset();
-    enterRoom(roomId, name, "host");
+    await enterRoom(roomId, name, "host");
 
   } catch (error) {
     status("Could not create room: " + error.message);
   }
 });
 
-// GUEST JOIN REQUEST
+// GUEST JOIN REQUEST - APPROVAL REQUIRED
 $("joinForm").addEventListener("submit", async event => {
   event.preventDefault();
 
   if (!currentUser) {
-    status("Still connecting. Please try again.");
+    status("Still connecting.");
     return;
   }
 
@@ -261,7 +257,7 @@ $("joinForm").addEventListener("submit", async event => {
   const roomName = $("joinRoomName").value.trim();
 
   if (!name || !roomName) {
-    status("Enter your name and the room name.");
+    status("Enter your name and room name.");
     return;
   }
 
@@ -269,18 +265,19 @@ $("joinForm").addEventListener("submit", async event => {
     const found = await findRoomByName(roomName);
 
     if (!found) {
-      status("We couldn't find that room.");
+      status("Room not found.");
       return;
     }
 
     const roomId = found.id;
 
-    const memberSnapshot = await get(
+    // Always request approval, even if this user was previously a member.
+    const existingMember = await get(
       ref(db, `roomMembers/${roomId}/${currentUser.uid}`)
     );
 
-    if (memberSnapshot.exists()) {
-      enterRoom(roomId, name, memberSnapshot.val().role || "member");
+    if (existingMember.exists()) {
+      status("You are already in this room. Return to the room if it is open.");
       return;
     }
 
@@ -299,7 +296,7 @@ $("joinForm").addEventListener("submit", async event => {
     currentName = name;
 
     showScreen("waitingScreen");
-    status("Your request has been sent.");
+    status("Waiting for host approval...");
 
     if (waitingListener) waitingListener();
 
@@ -316,7 +313,29 @@ $("joinForm").addEventListener("submit", async event => {
             ref(db, `roomDecisions/${roomId}/${currentUser.uid}`)
           );
 
-          enterRoom(roomId, name, "member");
+          await remove(requestRef);
+
+          const roomCheck = await get(ref(db, `roomInfo/${roomId}`));
+
+          if (!roomCheck.exists()) {
+            currentRoom = "";
+            showScreen("homeScreen");
+            status("This room no longer exists.");
+            return;
+          }
+
+          const memberCheck = await get(
+            ref(db, `roomMembers/${roomId}/${currentUser.uid}`)
+          );
+
+          if (!memberCheck.exists()) {
+            currentRoom = "";
+            showScreen("homeScreen");
+            status("Your approval expired. Please request again.");
+            return;
+          }
+
+          await enterRoom(roomId, name, "member");
         }
 
         if (decision === "declined") {
@@ -329,6 +348,8 @@ $("joinForm").addEventListener("submit", async event => {
           );
 
           currentRoom = "";
+          currentName = "";
+
           showScreen("homeScreen");
           status("Your request was declined.");
         }
@@ -373,7 +394,7 @@ $("hostLoginForm").addEventListener("submit", async event => {
     });
 
     $("hostLoginForm").reset();
-    enterRoom(id, room.hostName, "host");
+    await enterRoom(id, room.hostName, "host");
 
   } catch (error) {
     status("Host login failed: " + error.message);
@@ -413,7 +434,7 @@ $("cohostLoginForm").addEventListener("submit", async event => {
     });
 
     $("cohostLoginForm").reset();
-    enterRoom(id, "Co-host", "cohost");
+    await enterRoom(id, "Co-host", "cohost");
 
   } catch (error) {
     status("Co-host login failed: " + error.message);
@@ -436,14 +457,18 @@ async function enterRoom(roomId, name, role) {
     `roomMembers/${roomId}/${currentUser.uid}`
   );
 
-  // Remove member automatically if browser disconnects
+  // Automatically remove member when connection disappears
   await onDisconnect(memberRef).remove();
 
   showScreen("chatScreen");
 
   listen(`roomInfo/${roomId}`, room => {
     if (!room) {
-      leaveRoom(false);
+      currentRoom = "";
+      currentName = "";
+      currentRole = "";
+      stopListeners();
+      showScreen("homeScreen");
       status("This room has been closed.");
       return;
     }
@@ -478,13 +503,7 @@ async function enterRoom(roomId, name, role) {
   });
 
   listen(`roomMembers/${roomId}`, members => {
-    const currentMembers = members || {};
-
-    displayMembers(currentMembers);
-
-    if (Object.keys(currentMembers).length === 0) {
-      deleteRoom(roomId).catch(console.error);
-    }
+    displayMembers(members || {});
   });
 
   if (role === "host" || role === "cohost") {
@@ -502,7 +521,7 @@ function displayMessages(messages) {
   const entries = Object.entries(messages)
     .sort((a, b) => (a[1].sentAt || 0) - (b[1].sentAt || 0));
 
-  if (entries.length === 0) {
+  if (!entries.length) {
     box.textContent = "No messages yet.";
     return;
   }
@@ -579,7 +598,7 @@ function displayRequests(requests) {
 
   const entries = Object.entries(requests);
 
-  if (entries.length === 0) {
+  if (!entries.length) {
     box.textContent = "No pending requests.";
     return;
   }
@@ -595,14 +614,27 @@ function displayRequests(requests) {
     approve.textContent = "Approve";
 
     approve.onclick = async () => {
-      await set(ref(db, `roomMembers/${currentRoom}/${uid}`), {
-        name: request.name,
-        role: "member",
-        joinedAt: Date.now()
-      });
+      try {
+        const roomId = currentRoom;
 
-      await set(ref(db, `roomDecisions/${currentRoom}/${uid}`), "approved");
-      await remove(ref(db, `roomRequests/${currentRoom}/${uid}`));
+        await set(ref(db, `roomMembers/${roomId}/${uid}`), {
+          name: request.name,
+          role: "member",
+          joinedAt: Date.now()
+        });
+
+        await set(
+          ref(db, `roomDecisions/${roomId}/${uid}`),
+          "approved"
+        );
+
+        await remove(
+          ref(db, `roomRequests/${roomId}/${uid}`)
+        );
+
+      } catch (error) {
+        status("Could not approve request: " + error.message);
+      }
     };
 
     const decline = document.createElement("button");
@@ -610,8 +642,21 @@ function displayRequests(requests) {
     decline.className = "secondary";
 
     decline.onclick = async () => {
-      await set(ref(db, `roomDecisions/${currentRoom}/${uid}`), "declined");
-      await remove(ref(db, `roomRequests/${currentRoom}/${uid}`));
+      try {
+        const roomId = currentRoom;
+
+        await set(
+          ref(db, `roomDecisions/${roomId}/${uid}`),
+          "declined"
+        );
+
+        await remove(
+          ref(db, `roomRequests/${roomId}/${uid}`)
+        );
+
+      } catch (error) {
+        status("Could not decline request: " + error.message);
+      }
     };
 
     item.append(name, approve, decline);
@@ -701,7 +746,7 @@ $("closeRoomButton").onclick = async () => {
   }
 };
 
-// CANCEL REQUEST
+// CANCEL JOIN REQUEST
 $("cancelRequestButton").onclick = async () => {
   if (waitingListener) waitingListener();
   waitingListener = null;
@@ -717,6 +762,7 @@ $("cancelRequestButton").onclick = async () => {
   }
 
   currentRoom = "";
+  currentName = "";
   showScreen("homeScreen");
 };
 
@@ -735,7 +781,6 @@ async function leaveRoom(showHome = true) {
       const memberRef = ref(db, `roomMembers/${id}/${uid}`);
 
       await onDisconnect(memberRef).cancel();
-
       await remove(memberRef);
 
       const membersSnapshot = await get(
