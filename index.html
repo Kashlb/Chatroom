@@ -7,159 +7,154 @@
   <title>Chatroom</title>
   <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
 
-  <header class="header">
-    <h1>Chatroom</h1>
-    <p>Private conversations, made simple.</p>
-  </header>
+<header class="header">
+  <h1>Chatroom</h1>
+  <p>Private conversations, made simple.</p>
+  <div class="corner-login">
+    <button id="hostLoginButton" class="secondary">Host Login</button>
+    <button id="cohostLoginButton" class="secondary">Co-host Login</button>
+  </div>
+</header>
 
-  <main class="container">
+<main class="container">
 
-    <!-- HOME SCREEN -->
-    <section id="homeScreen" class="panel">
-      <h2>Welcome</h2>
-      <p>Create a private room or join an existing one.</p>
+  <section id="homeScreen" class="panel">
+    <h2>Welcome</h2>
+    <p>Create a room or join an existing one.</p>
+    <button id="showCreateButton">Create a room</button>
+    <button id="showJoinButton" class="secondary">Join a room</button>
+  </section>
 
-      <button id="showCreateButton">Create a room</button>
-      <button id="showJoinButton" class="secondary">Join a room</button>
-    </section>
+  <section id="createScreen" class="panel hidden">
+    <h2>Create a room</h2>
+    <form id="createForm">
+      <label for="hostName">Your name</label>
+      <input id="hostName" type="text" maxlength="25" required>
 
-    <!-- CREATE ROOM SCREEN -->
-    <section id="createScreen" class="panel hidden">
-      <h2>Create a room</h2>
+      <label for="roomName">Room name</label>
+      <input id="roomName" type="text" maxlength="40" required>
 
-      <form id="createForm">
-        <label for="hostName">Your name</label>
-        <input id="hostName" type="text" maxlength="25" required>
+      <label for="createPin">Host PIN</label>
+      <input id="createPin" type="password" minlength="4" required>
 
-        <label for="roomName">Room name</label>
-        <input id="roomName" type="text" maxlength="40" required>
+      <label for="createCohostPin">Co-host PIN (optional)</label>
+      <input id="createCohostPin" type="password" minlength="4">
 
-        <label for="createPin">Room PIN</label>
-        <input id="createPin" type="password" inputmode="numeric" maxlength="12" required>
+      <button type="submit">Create room</button>
+    </form>
+    <button class="secondary backButton">Back</button>
+  </section>
 
-        <button type="submit">Create room</button>
-      </form>
+  <section id="joinScreen" class="panel hidden">
+    <h2>Join a room</h2>
+    <form id="joinForm">
+      <label for="joinName">Your name</label>
+      <input id="joinName" type="text" maxlength="25" required>
 
-      <button class="secondary backButton">Back</button>
-    </section>
+      <label for="roomCode">Room code</label>
+      <input id="roomCode" type="text" required>
 
-    <!-- JOIN ROOM SCREEN -->
-    <section id="joinScreen" class="panel hidden">
-      <h2>Join a room</h2>
+      <button type="submit">Request to join</button>
+    </form>
+    <button class="secondary backButton">Back</button>
+  </section>
 
-      <form id="joinForm">
-        <label for="joinName">Your name</label>
-        <input id="joinName" type="text" maxlength="25" required>
+  <section id="hostLoginScreen" class="panel hidden">
+    <h2>Host Login</h2>
+    <form id="hostLoginForm">
+      <label for="hostLoginCode">Room code</label>
+      <input id="hostLoginCode" type="text" required>
 
-        <label for="roomCode">Room code</label>
-        <input id="roomCode" type="text" required>
+      <label for="hostLoginPin">Host PIN</label>
+      <input id="hostLoginPin" type="password" required>
 
-        <label for="joinPin">Room PIN</label>
-        <input id="joinPin" type="password" inputmode="numeric" maxlength="12" required>
+      <button type="submit">Log in as host</button>
+    </form>
+    <button class="secondary backButton">Back</button>
+  </section>
 
-        <button type="submit">Request to join</button>
-      </form>
+  <section id="cohostLoginScreen" class="panel hidden">
+    <h2>Co-host Login</h2>
+    <form id="cohostLoginForm">
+      <label for="cohostLoginCode">Room code</label>
+      <input id="cohostLoginCode" type="text" required>
 
-      <button class="secondary backButton">Back</button>
-    </section>
+      <label for="cohostLoginPin">Co-host PIN</label>
+      <input id="cohostLoginPin" type="password" required>
 
-    <!-- WAITING SCREEN -->
-    <section id="waitingScreen" class="panel hidden">
-      <h2>Waiting for approval</h2>
-      <p>Your request has been sent to the room host.</p>
-      <p>Please wait for them to approve you.</p>
-      <button id="cancelRequestButton" class="secondary">Cancel request</button>
-    </section>
+      <button type="submit">Log in as co-host</button>
+    </form>
+    <button class="secondary backButton">Back</button>
+  </section>
 
-    <!-- ROOM SCREEN -->
-    <section id="chatScreen" class="hidden">
+  <section id="waitingScreen" class="panel hidden">
+    <h2>Waiting for approval</h2>
+    <p>Your request has been sent to the room host.</p>
+    <p>Please wait for approval.</p>
+    <button id="cancelRequestButton" class="secondary">Cancel request</button>
+  </section>
 
-      <div class="panel roomHeader">
-        <div>
-          <h2 id="displayRoomName">Chatroom</h2>
-          <p>Room code: <strong id="displayRoomCode"></strong></p>
-        </div>
-        <button id="leaveButton" class="secondary">Leave room</button>
+  <section id="chatScreen" class="hidden">
+
+    <div class="panel roomHeader">
+      <div>
+        <h2 id="displayRoomName">Chatroom</h2>
+        <p>Room code: <strong id="displayRoomCode"></strong></p>
       </div>
+      <button id="leaveButton" class="secondary">Leave room</button>
+    </div>
 
-      <!-- HOST APPROVAL REQUESTS -->
-      <section id="requestsPanel" class="panel hidden">
-        <h3>Join requests</h3>
-        <div id="requestsList"></div>
-      </section>
-
-      <!-- CHAT MESSAGES -->
-      <section class="panel">
-        <h3>Messages</h3>
-
-        <div id="messages" class="messages">
-          <p class="emptyMessage">No messages yet.</p>
-        </div>
-
-        <form id="messageForm" class="messageForm">
-          <input
-            id="messageInput"
-            type="text"
-            maxlength="1000"
-            placeholder="Write a message..."
-            required
-          >
-          <button type="submit">Send</button>
-        </form>
-      </section>
-
-      <!-- MEMBERS -->
-      <section id="membersPanel" class="panel">
-        <h3>Room members</h3>
-        <div id="membersList"></div>
-      </section>
-
-      <!-- HOST CONTROLS -->
-      <section id="hostPanel" class="panel hidden">
-        <h3>Host controls</h3>
-
-        <div id="cohostControls">
-          <h4>Co-host</h4>
-          <div id="cohostList"></div>
-          <button id="assignCohostButton" class="secondary">
-            Assign co-host
-          </button>
-        </div>
-
-        <h4>Room settings</h4>
-
-        <label class="setting">
-          <input type="checkbox" id="allowMessages" checked>
-          Allow members to send messages
-        </label>
-
-        <label class="setting">
-          <input type="checkbox" id="showMembers" checked>
-          Show member list
-        </label>
-
-        <button id="saveSettingsButton">Save settings</button>
-
-        <button id="closeRoomButton" class="danger">
-          Close room
-        </button>
-      </section>
-
+    <section id="requestsPanel" class="panel hidden">
+      <h3>Join requests</h3>
+      <div id="requestsList"></div>
     </section>
 
-    <!-- STATUS / ERROR MESSAGE -->
-    <p id="statusMessage" class="status" role="status"></p>
+    <section class="panel">
+      <h3>Messages</h3>
+      <div id="messages" class="messages">
+        <p class="emptyMessage">No messages yet.</p>
+      </div>
+      <form id="messageForm" class="messageForm">
+        <input id="messageInput" type="text" maxlength="1000"
+          placeholder="Write a message..." required>
+        <button type="submit">Send</button>
+      </form>
+    </section>
 
-  </main>
+    <section id="membersPanel" class="panel">
+      <h3>Room members</h3>
+      <div id="membersList"></div>
+    </section>
 
-  <footer>
-    <p>Private Chatroom</p>
-  </footer>
+    <section id="hostPanel" class="panel hidden">
+      <h3>Host controls</h3>
+      <h4>Co-host</h4>
+      <div id="cohostList"></div>
 
-  <script type="module" src="app.js"></script>
+      <h4>Room settings</h4>
+      <label class="setting">
+        <input type="checkbox" id="allowMessages" checked>
+        Allow members to send messages
+      </label>
+      <label class="setting">
+        <input type="checkbox" id="showMembers" checked>
+        Show member list
+      </label>
+      <button id="saveSettingsButton">Save settings</button>
+      <button id="closeRoomButton" class="danger">Close room</button>
+    </section>
 
+  </section>
+
+  <p id="statusMessage" class="status" role="status"></p>
+</main>
+
+<footer>
+  <p>Private Chatroom</p>
+</footer>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>
