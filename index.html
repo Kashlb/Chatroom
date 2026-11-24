@@ -12,6 +12,7 @@
 <header class="header">
   <h1>Chatroom</h1>
   <p>Private conversations, made simple.</p>
+
   <div class="corner-login">
     <button id="hostLoginButton" class="secondary">Host Login</button>
     <button id="cohostLoginButton" class="secondary">Co-host Login</button>
@@ -22,13 +23,19 @@
 
   <section id="homeScreen" class="panel">
     <h2>Welcome</h2>
-    <p>Create a room or join an existing one.</p>
+    <p>Create a room or find one to join.</p>
     <button id="showCreateButton">Create a room</button>
-    <button id="showJoinButton" class="secondary">Join a room</button>
+    <button id="showJoinButton" class="secondary">Find a room</button>
+
+    <h3>Available rooms</h3>
+    <div id="availableRooms">
+      <p>Loading rooms...</p>
+    </div>
   </section>
 
   <section id="createScreen" class="panel hidden">
     <h2>Create a room</h2>
+
     <form id="createForm">
       <label for="hostName">Your name</label>
       <input id="hostName" type="text" maxlength="25" required>
@@ -44,48 +51,55 @@
 
       <button type="submit">Create room</button>
     </form>
+
     <button class="secondary backButton">Back</button>
   </section>
 
   <section id="joinScreen" class="panel hidden">
     <h2>Join a room</h2>
+
     <form id="joinForm">
       <label for="joinName">Your name</label>
       <input id="joinName" type="text" maxlength="25" required>
 
-      <label for="roomCode">Room code</label>
-      <input id="roomCode" type="text" required>
+      <label for="joinRoomName">Room name</label>
+      <input id="joinRoomName" type="text" maxlength="40" required>
 
       <button type="submit">Request to join</button>
     </form>
+
     <button class="secondary backButton">Back</button>
   </section>
 
   <section id="hostLoginScreen" class="panel hidden">
     <h2>Host Login</h2>
+
     <form id="hostLoginForm">
-      <label for="hostLoginCode">Room code</label>
-      <input id="hostLoginCode" type="text" required>
+      <label for="hostLoginRoomName">Room name</label>
+      <input id="hostLoginRoomName" type="text" required>
 
       <label for="hostLoginPin">Host PIN</label>
       <input id="hostLoginPin" type="password" required>
 
       <button type="submit">Log in as host</button>
     </form>
+
     <button class="secondary backButton">Back</button>
   </section>
 
   <section id="cohostLoginScreen" class="panel hidden">
     <h2>Co-host Login</h2>
+
     <form id="cohostLoginForm">
-      <label for="cohostLoginCode">Room code</label>
-      <input id="cohostLoginCode" type="text" required>
+      <label for="cohostLoginRoomName">Room name</label>
+      <input id="cohostLoginRoomName" type="text" required>
 
       <label for="cohostLoginPin">Co-host PIN</label>
       <input id="cohostLoginPin" type="password" required>
 
       <button type="submit">Log in as co-host</button>
     </form>
+
     <button class="secondary backButton">Back</button>
   </section>
 
@@ -101,7 +115,6 @@
     <div class="panel roomHeader">
       <div>
         <h2 id="displayRoomName">Chatroom</h2>
-        <p>Room code: <strong id="displayRoomCode"></strong></p>
       </div>
       <button id="leaveButton" class="secondary">Leave room</button>
     </div>
@@ -116,6 +129,7 @@
       <div id="messages" class="messages">
         <p class="emptyMessage">No messages yet.</p>
       </div>
+
       <form id="messageForm" class="messageForm">
         <input id="messageInput" type="text" maxlength="1000"
           placeholder="Write a message..." required>
@@ -130,18 +144,22 @@
 
     <section id="hostPanel" class="panel hidden">
       <h3>Host controls</h3>
+
       <h4>Co-host</h4>
       <div id="cohostList"></div>
 
       <h4>Room settings</h4>
+
       <label class="setting">
         <input type="checkbox" id="allowMessages" checked>
         Allow members to send messages
       </label>
+
       <label class="setting">
         <input type="checkbox" id="showMembers" checked>
         Show member list
       </label>
+
       <button id="saveSettingsButton">Save settings</button>
       <button id="closeRoomButton" class="danger">Close room</button>
     </section>
@@ -149,6 +167,7 @@
   </section>
 
   <p id="statusMessage" class="status" role="status"></p>
+
 </main>
 
 <footer>
