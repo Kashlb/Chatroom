@@ -2,7 +2,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import {
-  getDatabase, ref, get, set, update, remove, push, onValue
+  getDatabase,
+  ref,
+  get,
+  set,
+  update,
+  remove,
+  push,
+  onValue
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
 
 // FIREBASE SETTINGS
@@ -38,6 +45,7 @@ function showScreen(id) {
   document.querySelectorAll("main > section").forEach(section => {
     section.classList.add("hidden");
   });
+
   $(id).classList.remove("hidden");
   status("");
 }
@@ -46,6 +54,7 @@ function listen(path, callback) {
   const unsubscribe = onValue(ref(db, path), snapshot => {
     callback(snapshot.val());
   });
+
   listeners.push(unsubscribe);
 }
 
@@ -54,22 +63,40 @@ function stopListeners() {
   listeners = [];
 }
 
-function cleanCode(code) {
-  return code.trim().toUpperCase();
-}
-
-function makeCode() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+function normalizeName(name) {
+  return name.trim().toLowerCase();
 }
 
 function safeText(value) {
   return String(value ?? "");
 }
 
-// STARTUP
+// FIND A ROOM BY ITS NAME
+async function findRoomByName(name) {
+  const snapshot = await get(ref(db, "roomInfo"));
+
+  if (!snapshot.exists()) return null;
+
+  const wantedName = normalizeName(name);
+  const rooms = snapshot.val();
+
+  for (const [id, room] of Object.entries(rooms)) {
+    if (normalizeName(room.name || "") === wantedName) {
+      return { id, room };
+    }
+  }
+
+  return null;
+}
+
+// CONNECT TO FIREBASE
 try {
   const result = await signInAnonymously(auth);
   currentUser = result.user;
+
+  listen("roomInfo", rooms => {
+    displayAvailableRooms(rooms || {});
+  });
 } catch (error) {
   status("Could not connect to Firebase: " + error.message);
 }
@@ -83,6 +110,37 @@ $("cohostLoginButton").onclick = () => showScreen("cohostLoginScreen");
 document.querySelectorAll(".backButton").forEach(button => {
   button.onclick = () => showScreen("homeScreen");
 });
+
+// DISPLAY AVAILABLE ROOMS
+function displayAvailableRooms(rooms) {
+  const box = $("availableRooms");
+  box.innerHTML = "";
+
+  const entries = Object.entries(rooms);
+
+  if (entries.length === 0) {
+    box.textContent = "There are no rooms available right now.";
+    return;
+  }
+
+  entries.forEach(([id, room]) => {
+    const item = document.createElement("div");
+    item.className = "member";
+
+    const name = document.createElement("strong");
+    name.textContent = safeText(room.name);
+
+    const joinButton = document.createElement("button");
+    joinButton.textContent = "Join";
+    joinButton.onclick = () => {
+      $("joinRoomName").value = room.name;
+      showScreen("joinScreen");
+    };
+
+    item.append(name, joinButton);
+    box.appendChild(item);
+  });
+}
 
 // CREATE ROOM
 $("createForm").addEventListener("submit", async event => {
@@ -99,7 +157,7 @@ $("createForm").addEventListener("submit", async event => {
   const cohostPin = $("createCohostPin").value;
 
   if (!name || !roomName || hostPin.length < 4) {
-    status("Please complete the required fields. Your PIN must be at least 4 characters.");
+    status("Please complete the fields. The host PIN must be at least 4 characters.");
     return;
   }
 
@@ -109,13 +167,17 @@ $("createForm").addEventListener("submit", async event => {
   }
 
   try {
-    let code = makeCode();
+    const existingRoom = await findRoomByName(roomName);
 
-    while ((await get(ref(db, "roomInfo/" + code))).exists()) {
-      code = makeCode();
+    if (existingRoom) {
+      status("That room name is already being used. Choose another name.");
+      return;
     }
 
-    await set(ref(db, "roomInfo/" + code), {
+    const roomRef = push(ref(db, "roomInfo"));
+    const roomId = roomRef.key;
+
+    await set(roomRef, {
       name: roomName,
       hostName: name,
       hostUid: currentUser.uid,
@@ -129,19 +191,21 @@ $("createForm").addEventListener("submit", async event => {
       createdAt: Date.now()
     });
 
-    await set(ref(db, `roomMembers/${code}/${currentUser.uid}`), {
+    await set(ref(db, `roomMembers/${roomId}/${currentUser.uid}`), {
       name,
       role: "host",
       joinedAt: Date.now()
     });
 
-    enterRoom(code, name, "host");
+    $("createForm").reset();
+    enterRoom(roomId, name, "host");
+
   } catch (error) {
     status("Could not create room: " + error.message);
   }
 });
 
-// JOIN ROOM - GUESTS ONLY NEED NAME AND CODE
+// GUEST JOIN REQUEST
 $("joinForm").addEventListener("submit", async event => {
   event.preventDefault();
 
@@ -151,31 +215,36 @@ $("joinForm").addEventListener("submit", async event => {
   }
 
   const name = $("joinName").value.trim();
-  const code = cleanCode($("roomCode").value);
+  const roomName = $("joinRoomName").value.trim();
 
-  if (!name || !code) {
-    status("Enter your name and room code.");
+  if (!name || !roomName) {
+    status("Enter your name and the room name.");
     return;
   }
 
   try {
-    const roomSnapshot = await get(ref(db, "roomInfo/" + code));
+    const found = await findRoomByName(roomName);
 
-    if (!roomSnapshot.exists()) {
-      status("That room could not be found.");
+    if (!found) {
+      status("We couldn't find that room.");
       return;
     }
 
-    const existingMember = await get(
-      ref(db, `roomMembers/${code}/${currentUser.uid}`)
+    const roomId = found.id;
+
+    const memberSnapshot = await get(
+      ref(db, `roomMembers/${roomId}/${currentUser.uid}`)
     );
 
-    if (existingMember.exists()) {
-      enterRoom(code, name, existingMember.val().role || "member");
+    if (memberSnapshot.exists()) {
+      enterRoom(roomId, name, memberSnapshot.val().role || "member");
       return;
     }
 
-    const requestRef = ref(db, `roomRequests/${code}/${currentUser.uid}`);
+    const requestRef = ref(
+      db,
+      `roomRequests/${roomId}/${currentUser.uid}`
+    );
 
     await set(requestRef, {
       uid: currentUser.uid,
@@ -183,36 +252,46 @@ $("joinForm").addEventListener("submit", async event => {
       requestedAt: Date.now()
     });
 
-    currentRoom = code;
+    currentRoom = roomId;
     currentName = name;
+
     showScreen("waitingScreen");
     status("Your request has been sent.");
 
     if (waitingListener) waitingListener();
 
     waitingListener = onValue(
-      ref(db, `roomDecisions/${code}/${currentUser.uid}`),
+      ref(db, `roomDecisions/${roomId}/${currentUser.uid}`),
       async snapshot => {
         const decision = snapshot.val();
 
         if (decision === "approved") {
           waitingListener?.();
           waitingListener = null;
-          await remove(ref(db, `roomDecisions/${code}/${currentUser.uid}`));
-          enterRoom(code, name, "member");
+
+          await remove(
+            ref(db, `roomDecisions/${roomId}/${currentUser.uid}`)
+          );
+
+          enterRoom(roomId, name, "member");
         }
 
         if (decision === "declined") {
           waitingListener?.();
           waitingListener = null;
-          await remove(ref(db, `roomDecisions/${code}/${currentUser.uid}`));
+
           await remove(requestRef);
+          await remove(
+            ref(db, `roomDecisions/${roomId}/${currentUser.uid}`)
+          );
+
           currentRoom = "";
           showScreen("homeScreen");
           status("Your request was declined.");
         }
       }
     );
+
   } catch (error) {
     status("Could not request to join: " + error.message);
   }
@@ -222,35 +301,37 @@ $("joinForm").addEventListener("submit", async event => {
 $("hostLoginForm").addEventListener("submit", async event => {
   event.preventDefault();
 
-  const code = cleanCode($("hostLoginCode").value);
+  const roomName = $("hostLoginRoomName").value.trim();
   const pin = $("hostLoginPin").value;
 
   try {
-    const snapshot = await get(ref(db, "roomInfo/" + code));
+    const found = await findRoomByName(roomName);
 
-    if (!snapshot.exists()) {
+    if (!found) {
       status("Room not found.");
       return;
     }
 
-    const room = snapshot.val();
+    const { id, room } = found;
 
     if (room.hostPin !== pin) {
       status("Incorrect host PIN.");
       return;
     }
 
-    await update(ref(db, "roomInfo/" + code), {
+    await update(ref(db, `roomInfo/${id}`), {
       hostUid: currentUser.uid
     });
 
-    await set(ref(db, `roomMembers/${code}/${currentUser.uid}`), {
+    await set(ref(db, `roomMembers/${id}/${currentUser.uid}`), {
       name: room.hostName,
       role: "host",
       joinedAt: Date.now()
     });
 
-    enterRoom(code, room.hostName, "host");
+    $("hostLoginForm").reset();
+    enterRoom(id, room.hostName, "host");
+
   } catch (error) {
     status("Host login failed: " + error.message);
   }
@@ -260,53 +341,56 @@ $("hostLoginForm").addEventListener("submit", async event => {
 $("cohostLoginForm").addEventListener("submit", async event => {
   event.preventDefault();
 
-  const code = cleanCode($("cohostLoginCode").value);
+  const roomName = $("cohostLoginRoomName").value.trim();
   const pin = $("cohostLoginPin").value;
 
   try {
-    const snapshot = await get(ref(db, "roomInfo/" + code));
+    const found = await findRoomByName(roomName);
 
-    if (!snapshot.exists()) {
+    if (!found) {
       status("Room not found.");
       return;
     }
 
-    const room = snapshot.val();
+    const { id, room } = found;
 
     if (!room.cohostPin || room.cohostPin !== pin) {
       status("Incorrect co-host PIN.");
       return;
     }
 
-    await update(ref(db, "roomInfo/" + code), {
+    await update(ref(db, `roomInfo/${id}`), {
       cohostUid: currentUser.uid
     });
 
-    await set(ref(db, `roomMembers/${code}/${currentUser.uid}`), {
+    await set(ref(db, `roomMembers/${id}/${currentUser.uid}`), {
       name: "Co-host",
       role: "cohost",
       joinedAt: Date.now()
     });
 
-    enterRoom(code, "Co-host", "cohost");
+    $("cohostLoginForm").reset();
+    enterRoom(id, "Co-host", "cohost");
+
   } catch (error) {
     status("Co-host login failed: " + error.message);
   }
 });
 
 // ENTER ROOM
-function enterRoom(code, name, role) {
+function enterRoom(roomId, name, role) {
   stopListeners();
 
-  currentRoom = code;
+  if (waitingListener) waitingListener();
+  waitingListener = null;
+
+  currentRoom = roomId;
   currentName = name;
   currentRole = role;
 
   showScreen("chatScreen");
 
-  $("displayRoomCode").textContent = code;
-
-  listen(`roomInfo/${code}`, room => {
+  listen(`roomInfo/${roomId}`, room => {
     if (!room) {
       leaveRoom(false);
       status("This room has been closed.");
@@ -315,20 +399,18 @@ function enterRoom(code, name, role) {
 
     $("displayRoomName").textContent = room.name || "Chatroom";
 
-    if (role === "host") {
-      $("hostPanel").classList.remove("hidden");
-      $("requestsPanel").classList.remove("hidden");
-      $("allowMessages").checked = room.settings?.allowMessages !== false;
-      $("showMembers").checked = room.settings?.showMembers !== false;
-    } else {
-      $("hostPanel").classList.add("hidden");
-    }
+    $("hostPanel").classList.toggle("hidden", role !== "host");
 
-    if (role === "host" || role === "cohost") {
-      $("requestsPanel").classList.remove("hidden");
-    } else {
-      $("requestsPanel").classList.add("hidden");
-    }
+    $("requestsPanel").classList.toggle(
+      "hidden",
+      role !== "host" && role !== "cohost"
+    );
+
+    $("allowMessages").checked =
+      room.settings?.allowMessages !== false;
+
+    $("showMembers").checked =
+      room.settings?.showMembers !== false;
 
     $("membersPanel").classList.toggle(
       "hidden",
@@ -340,16 +422,16 @@ function enterRoom(code, name, role) {
     }
   });
 
-  listen(`roomMessages/${code}`, messages => {
+  listen(`roomMessages/${roomId}`, messages => {
     displayMessages(messages || {});
   });
 
-  listen(`roomMembers/${code}`, members => {
+  listen(`roomMembers/${roomId}`, members => {
     displayMembers(members || {});
   });
 
   if (role === "host" || role === "cohost") {
-    listen(`roomRequests/${code}`, requests => {
+    listen(`roomRequests/${roomId}`, requests => {
       displayRequests(requests || {});
     });
   }
@@ -401,15 +483,24 @@ function displayMembers(members) {
   Object.entries(members).forEach(([uid, member]) => {
     const item = document.createElement("div");
     item.className = "member";
-    item.textContent = safeText(member.name) + " (" + safeText(member.role) + ")";
+    item.textContent =
+      safeText(member.name) + " (" + safeText(member.role) + ")";
 
     if (currentRole === "host" && uid !== currentUser.uid) {
       const removeButton = document.createElement("button");
       removeButton.textContent = "Remove";
       removeButton.className = "danger";
+
       removeButton.onclick = async () => {
         await remove(ref(db, `roomMembers/${currentRoom}/${uid}`));
+
+        if (member.role === "cohost") {
+          await update(ref(db, `roomInfo/${currentRoom}`), {
+            cohostUid: ""
+          });
+        }
       };
+
       item.appendChild(removeButton);
     }
 
@@ -417,7 +508,8 @@ function displayMembers(members) {
 
     if (member.role === "cohost") {
       const cohostItem = document.createElement("div");
-      cohostItem.textContent = safeText(member.name) + " is a co-host";
+      cohostItem.textContent =
+        safeText(member.name) + " is a co-host";
       cohosts.appendChild(cohostItem);
     }
   });
@@ -444,6 +536,7 @@ function displayRequests(requests) {
 
     const approve = document.createElement("button");
     approve.textContent = "Approve";
+
     approve.onclick = async () => {
       await set(ref(db, `roomMembers/${currentRoom}/${uid}`), {
         name: request.name,
@@ -458,6 +551,7 @@ function displayRequests(requests) {
     const decline = document.createElement("button");
     decline.textContent = "Decline";
     decline.className = "secondary";
+
     decline.onclick = async () => {
       await set(ref(db, `roomDecisions/${currentRoom}/${uid}`), "declined");
       await remove(ref(db, `roomRequests/${currentRoom}/${uid}`));
@@ -472,11 +566,15 @@ function displayRequests(requests) {
 $("messageForm").addEventListener("submit", async event => {
   event.preventDefault();
 
-  const text = $("messageInput").value.trim();
-  if (!text || !currentRoom) return;
+  const messageText = $("messageInput").value.trim();
+
+  if (!messageText || !currentRoom) return;
 
   try {
-    const roomSnapshot = await get(ref(db, `roomInfo/${currentRoom}`));
+    const roomSnapshot = await get(
+      ref(db, `roomInfo/${currentRoom}`)
+    );
+
     const room = roomSnapshot.val();
 
     if (!room || room.settings?.allowMessages === false) {
@@ -496,18 +594,19 @@ $("messageForm").addEventListener("submit", async event => {
     await push(ref(db, `roomMessages/${currentRoom}`), {
       uid: currentUser.uid,
       name: currentName,
-      text,
+      text: messageText,
       sentAt: Date.now()
     });
 
     $("messageInput").value = "";
     status("");
+
   } catch (error) {
     status("Could not send message: " + error.message);
   }
 });
 
-// SAVE ROOM SETTINGS
+// SAVE SETTINGS
 $("saveSettingsButton").onclick = async () => {
   if (currentRole !== "host") return;
 
@@ -516,7 +615,9 @@ $("saveSettingsButton").onclick = async () => {
       allowMessages: $("allowMessages").checked,
       showMembers: $("showMembers").checked
     });
+
     status("Settings saved.");
+
   } catch (error) {
     status("Could not save settings: " + error.message);
   }
@@ -531,29 +632,35 @@ $("closeRoomButton").onclick = async () => {
   }
 
   try {
-    const code = currentRoom;
+    const id = currentRoom;
 
-    await remove(ref(db, `roomInfo/${code}`));
-    await remove(ref(db, `roomMembers/${code}`));
-    await remove(ref(db, `roomRequests/${code}`));
-    await remove(ref(db, `roomDecisions/${code}`));
-    await remove(ref(db, `roomMessages/${code}`));
+    await remove(ref(db, `roomInfo/${id}`));
+    await remove(ref(db, `roomMembers/${id}`));
+    await remove(ref(db, `roomRequests/${id}`));
+    await remove(ref(db, `roomDecisions/${id}`));
+    await remove(ref(db, `roomMessages/${id}`));
 
     leaveRoom(false);
     status("Room closed.");
+
   } catch (error) {
     status("Could not close room: " + error.message);
   }
 };
 
-// CANCEL JOIN REQUEST
+// CANCEL REQUEST
 $("cancelRequestButton").onclick = async () => {
   if (waitingListener) waitingListener();
   waitingListener = null;
 
   if (currentRoom && currentUser) {
-    await remove(ref(db, `roomRequests/${currentRoom}/${currentUser.uid}`));
-    await remove(ref(db, `roomDecisions/${currentRoom}/${currentUser.uid}`));
+    await remove(
+      ref(db, `roomRequests/${currentRoom}/${currentUser.uid}`)
+    );
+
+    await remove(
+      ref(db, `roomDecisions/${currentRoom}/${currentUser.uid}`)
+    );
   }
 
   currentRoom = "";
@@ -568,10 +675,12 @@ async function leaveRoom(showHome = true) {
   waitingListener = null;
 
   if (currentRoom && currentUser && currentRole === "member") {
-    await remove(ref(db, `roomMembers/${currentRoom}/${currentUser.uid}`));
+    await remove(
+      ref(db, `roomMembers/${currentRoom}/${currentUser.uid}`)
+    );
   }
 
-  // Host and co-host access stays saved so they can log in again.
+  // Host and co-host records stay so they can log back in.
   currentRoom = "";
   currentName = "";
   currentRole = "";
@@ -581,5 +690,5 @@ async function leaveRoom(showHome = true) {
 
 $("leaveButton").onclick = () => leaveRoom(true);
 
-// INITIAL SCREEN
+// HOME SCREEN
 showScreen("homeScreen");
