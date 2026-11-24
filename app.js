@@ -9,7 +9,8 @@ import {
   update,
   remove,
   push,
-  onValue
+  onValue,
+  onDisconnect
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js";
 
 // FIREBASE SETTINGS
@@ -19,8 +20,8 @@ const firebaseConfig = {
   databaseURL: "https://chatroom-website-b704b-default-rtdb.firebaseio.com",
   projectId: "chatroom-website-b704b",
   storageBucket: "chatroom-website-b704b.firebasestorage.app",
-  messagingSenderId: "1090177216314",
-  appId: "1:1090177216314:web:7a4934f767a9d490af2a03"
+  messagingSenderId: "109017721631",
+  appId: "1:109017721631:web:7a4934f767a9d490af2a03"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -71,8 +72,47 @@ function safeText(value) {
   return String(value ?? "");
 }
 
+// DELETE ENTIRE ROOM
+async function deleteRoom(roomId) {
+  await Promise.all([
+    remove(ref(db, `roomInfo/${roomId}`)),
+    remove(ref(db, `roomMembers/${roomId}`)),
+    remove(ref(db, `roomRequests/${roomId}`)),
+    remove(ref(db, `roomDecisions/${roomId}`)),
+    remove(ref(db, `roomMessages/${roomId}`))
+  ]);
+}
+
+// CHECK FOR EMPTY ROOMS
+async function cleanupEmptyRooms() {
+  try {
+    const roomsSnapshot = await get(ref(db, "roomInfo"));
+
+    if (!roomsSnapshot.exists()) return;
+
+    const rooms = roomsSnapshot.val();
+
+    for (const [id, room] of Object.entries(rooms)) {
+      // Give newly created rooms time to finish setup
+      if (Date.now() - (room.createdAt || 0) < 15000) continue;
+
+      const membersSnapshot = await get(
+        ref(db, `roomMembers/${id}`)
+      );
+
+      if (!membersSnapshot.exists()) {
+        await deleteRoom(id);
+      }
+    }
+  } catch (error) {
+    console.error("Room cleanup error:", error);
+  }
+}
+
 // FIND A ROOM BY ITS NAME
 async function findRoomByName(name) {
+  await cleanupEmptyRooms();
+
   const snapshot = await get(ref(db, "roomInfo"));
 
   if (!snapshot.exists()) return null;
@@ -97,6 +137,9 @@ try {
   listen("roomInfo", rooms => {
     displayAvailableRooms(rooms || {});
   });
+
+  cleanupEmptyRooms();
+
 } catch (error) {
   status("Could not connect to Firebase: " + error.message);
 }
@@ -378,7 +421,7 @@ $("cohostLoginForm").addEventListener("submit", async event => {
 });
 
 // ENTER ROOM
-function enterRoom(roomId, name, role) {
+async function enterRoom(roomId, name, role) {
   stopListeners();
 
   if (waitingListener) waitingListener();
@@ -387,6 +430,14 @@ function enterRoom(roomId, name, role) {
   currentRoom = roomId;
   currentName = name;
   currentRole = role;
+
+  const memberRef = ref(
+    db,
+    `roomMembers/${roomId}/${currentUser.uid}`
+  );
+
+  // Remove member automatically if browser disconnects
+  await onDisconnect(memberRef).remove();
 
   showScreen("chatScreen");
 
@@ -427,7 +478,13 @@ function enterRoom(roomId, name, role) {
   });
 
   listen(`roomMembers/${roomId}`, members => {
-    displayMembers(members || {});
+    const currentMembers = members || {};
+
+    displayMembers(currentMembers);
+
+    if (Object.keys(currentMembers).length === 0) {
+      deleteRoom(roomId).catch(console.error);
+    }
   });
 
   if (role === "host" || role === "cohost") {
@@ -634,13 +691,9 @@ $("closeRoomButton").onclick = async () => {
   try {
     const id = currentRoom;
 
-    await remove(ref(db, `roomInfo/${id}`));
-    await remove(ref(db, `roomMembers/${id}`));
-    await remove(ref(db, `roomRequests/${id}`));
-    await remove(ref(db, `roomDecisions/${id}`));
-    await remove(ref(db, `roomMessages/${id}`));
+    await deleteRoom(id);
+    await leaveRoom(false);
 
-    leaveRoom(false);
     status("Room closed.");
 
   } catch (error) {
@@ -669,18 +722,35 @@ $("cancelRequestButton").onclick = async () => {
 
 // LEAVE ROOM
 async function leaveRoom(showHome = true) {
+  const id = currentRoom;
+  const uid = currentUser?.uid;
+
   stopListeners();
 
   if (waitingListener) waitingListener();
   waitingListener = null;
 
-  if (currentRoom && currentUser && currentRole === "member") {
-    await remove(
-      ref(db, `roomMembers/${currentRoom}/${currentUser.uid}`)
-    );
+  if (id && uid) {
+    try {
+      const memberRef = ref(db, `roomMembers/${id}/${uid}`);
+
+      await onDisconnect(memberRef).cancel();
+
+      await remove(memberRef);
+
+      const membersSnapshot = await get(
+        ref(db, `roomMembers/${id}`)
+      );
+
+      if (!membersSnapshot.exists()) {
+        await deleteRoom(id);
+      }
+
+    } catch (error) {
+      console.error("Leave room error:", error);
+    }
   }
 
-  // Host and co-host records stay so they can log back in.
   currentRoom = "";
   currentName = "";
   currentRole = "";
