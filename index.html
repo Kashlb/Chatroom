@@ -1,0 +1,65 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chatroom</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Chatroom</h1>
+    <p id="status">Connecting...</p>
+  </header>
+
+  <main>
+    <section id="welcome">
+      <h2>Welcome</h2>
+
+      <form id="createForm">
+        <h3>Create a room</h3>
+        <input id="roomName" placeholder="Room name" required>
+        <input id="hostName" placeholder="Your display name" required>
+        <input id="hostPin" type="password" placeholder="Create a PIN" required>
+        <button type="submit">Create room</button>
+      </form>
+
+      <hr>
+
+      <form id="joinForm">
+        <h3>Join a room</h3>
+        <input id="roomCode" placeholder="Room code" required>
+        <input id="guestName" placeholder="Your display name" required>
+        <button type="submit">Request to join</button>
+      </form>
+
+      <p id="welcomeStatus"></p>
+    </section>
+
+    <section id="chat" hidden>
+      <h2 id="roomTitle">Chatroom</h2>
+      <p id="roomCodeLabel"></p>
+      <p id="roomStatus"></p>
+
+      <div id="staffPanel" hidden>
+        <h3>Member requests</h3>
+        <ul id="pendingList"></ul>
+        <h3>Members</h3>
+        <ul id="memberList"></ul>
+      </div>
+
+      <div id="messages"></div>
+
+      <form id="messageForm">
+        <input id="messageInput" maxlength="1000" placeholder="Write a message..." required>
+        <button type="submit">Send</button>
+      </form>
+
+      <button id="leaveRoom" type="button">Leave room</button>
+    </section>
+  </main>
+</body>
+</html>
